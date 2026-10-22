@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TÜBİTAK Kelime Düellosu</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Outfit', sans-serif; -webkit-tap-highlight-color: transparent; }
+    .font-mono-num { font-family: 'Space Grotesk', monospace; }
+    body {
+      background: radial-gradient(circle at 50% 10%, #1e1b4b 0%, #0f172a 40%, #020617 100%);
+      touch-action: manipulation;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .neon-red {
+      box-shadow: 0 0 20px rgba(244, 63, 94, 0.4), inset 0 0 15px rgba(244, 63, 94, 0.2);
+    }
+    .neon-blue {
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), inset 0 0 15px rgba(56, 189, 248, 0.2);
+    }
+    .neon-gold {
+      box-shadow: 0 0 30px rgba(250, 204, 21, 0.45);
+    }
+    .card-photo-box {
+      transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+    }
+    .card-photo-box:active {
+      transform: scale(0.93) translateY(2px);
+    }
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.8; filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.6)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 28px rgba(168, 85, 247, 0.9)); }
+    }
+    .glow-word {
+      animation: glow-pulse 2s infinite ease-in-out;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+    .shake-anim { animation: shake 0.4s ease-in-out; }
+  </style>
+</head>
+<body class="text-white min-h-screen flex flex-col justify-between p-3 select-none overflow-x-hidden">
+
+  <!-- ÜST HEADER: CANLI ARENA PUAN TABLOSU -->
+  <header class="w-full glass-panel rounded-2xl p-2.5 shadow-2xl flex items-center justify-between border-t border-slate-700/50">
+    <div id="playerBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700">
+      <span class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></span>
+      <span id="playerTitle" class="font-black text-xs tracking-wider uppercase">Bağlanılıyor...</span>
+    </div>
+    
+    <!-- 2 Oyuncu Canlı Skorbordu -->
+    <div class="flex items-center gap-2">
+      <div id="badgeP1" class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 font-black text-xs shadow">
+        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+        <span>P1:</span>
+        <span id="scoreP1" class="font-mono-num text-sm text-white">0</span>
+      </div>
+      <div id="badgeP2" class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-black text-xs shadow">
+        <span class="w-2 h-2 rounded-full bg-cyan-500"></span>
+        <span>P2:</span>
+        <span id="scoreP2" class="font-mono-num text-sm text-white">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ANA OYUN ALANI -->
+  <main id="mainContainer" class="flex-1 flex flex-col justify-center my-2 relative">
+
+    <!-- 1. BEKLEME EKRANI (1/2 OYUNCU) -->
+    <div id="screenWaiting" class="flex flex-col items-center text-center py-6 px-4 space-y-5">
+      <div class="relative">
+        <div class="w-28 h-28 rounded-3xl bg-gradient-to-tr from-indigo-600/30 to-purple-600/30 border-2 border-indigo-400/50 flex items-center justify-center shadow-2xl animate-pulse">
+          <span class="text-5xl">⚡</span>
+        </div>
+        <span class="absolute -top-2 -right-2 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-xs px-2.5 py-1 rounded-full shadow-lg">1/2</span>
+      </div>
+
+      <div class="space-y-1.5">
+        <h2 class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-indigo-300">
+          Eşleşme Bekleniyor
+        </h2>
+        <p class="text-slate-400 text-xs max-w-xs leading-relaxed">
+          Siz bağlandınız! Rakip oyuncunun standdaki 2. QR kodu okutması bekleniyor.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2 glass-panel px-4 py-2 rounded-full text-xs text-amber-400 font-bold border border-amber-500/30 shadow-lg">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span>2. Oyuncu bekleniyor...</span>
+      </div>
+    </div>
+
+    <!-- 2. OYLAMA EKRANI (2/2 HAZIR - ZORLUK SEÇİMİ) -->
+    <div id="screenVoting" class="hidden flex-col items-center text-center space-y-3 py-1">
+      <div class="space-y-1">
+        <span class="bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 text-[10px] font-black uppercase px-3.5 py-1 rounded-full shadow-lg">
+          🔥 2/2 DÜELLO BAŞLIYOR!
+        </span>
+        <h2 class="text-2xl font-black text-white">Zorluk Seviyesini Seçin</h2>
+        <p class="text-[11px] text-slate-400">Eşitlik durumunda %50 şansla adil seçim yapılır (Toplam 20 Soru)</p>
+      </div>
+
+      <div class="grid grid-cols-1 w-full gap-2.5 max-w-xs">
+        <button onclick="voteDifficulty('easy')" id="vote-easy" class="vote-btn p-3 rounded-2xl glass-panel border-2 border-emerald-500/40 hover:border-emerald-400 flex items-center justify-between text-left transition transform active:scale-95 shadow-lg">
+          <div>
+            <div class="text-sm font-black text-emerald-400 flex items-center gap-1.5">
+              <span>🟢</span> Kolay (Easy)
+            </div>
+            <div class="text-[11px] text-slate-400">9. Sınıf Konuları & Kelimeleri</div>
+          </div>
+          <span class="text-xs font-black bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-xl border border-emerald-500/30">9. Sınıf</span>
+        </button>
+
+        <button onclick="voteDifficulty('medium')" id="vote-medium" class="vote-btn p-3 rounded-2xl glass-panel border-2 border-amber-500/40 hover:border-amber-400 flex items-center justify-between text-left transition transform active:scale-95 shadow-lg">
+          <div>
+            <div class="text-sm font-black text-amber-400 flex items-center gap-1.5">
+              <span>🟡</span> Orta (Medium)
+            </div>
+            <div class="text-[11px] text-slate-400">10. Sınıf Konuları & Kelimeleri</div>
+          </div>
+          <span class="text-xs font-black bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-xl border border-amber-500/30">10. Sınıf</span>
+        </button>
+
+        <button onclick="voteDifficulty('hard')" id="vote-hard" class="vote-btn p-3 rounded-2xl glass-panel border-2 border-rose-500/40 hover:border-rose-400 flex items-center justify-between text-left transition transform active:scale-95 shadow-lg">
+          <div>
+            <div class="text-sm font-black text-rose-400 flex items-center gap-1.5">
+              <span>🔴</span> Zor (Hard)
+            </div>
+            <div class="text-[11px] text-slate-400">11. Sınıf Konuları & Kelimeleri</div>
+          </div>
+          <span class="text-xs font-black bg-rose-500/20 text-rose-300 px-2.5 py-1 rounded-xl border border-rose-500/30">11. Sınıf</span>
+        </button>
+
+        <button onclick="voteDifficulty('impossible')" id="vote-impossible" class="vote-btn p-3 rounded-2xl glass-panel border-2 border-purple-500/40 hover:border-purple-400 flex items-center justify-between text-left transition transform active:scale-95 shadow-lg">
+          <div>
+            <div class="text-sm font-black text-purple-400 flex items-center gap-1.5">
+              <span>🟣</span> İmkansız (Impossible)
+            </div>
+            <div class="text-[11px] text-slate-400">12. Sınıf İleri Düzey Kelimeler</div>
+          </div>
+          <span class="text-xs font-black bg-purple-500/20 text-purple-300 px-2.5 py-1 rounded-xl border border-purple-500/30">12. Sınıf</span>
+        </button>
+      </div>
+
+      <div id="voteStatusText" class="text-xs text-indigo-300 font-bold bg-indigo-500/10 py-1.5 px-4 rounded-xl border border-indigo-500/20">
+        Oyunuzu seçiniz...
+      </div>
+    </div>
+
+    <!-- 3. GİRİŞ & GERİ SAYIM EKRANI (INTRO) -->
+    <div id="screenIntro" class="hidden flex-col items-center justify-center text-center space-y-4 py-8">
+      <div id="chosenDifficultyBadge" class="px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest shadow-2xl border"></div>
+      
+      <div class="space-y-1">
+        <p class="text-xs text-indigo-300 uppercase tracking-widest font-black">Rastgele Seçilen Ünite</p>
+        <h3 id="chosenThemeName" class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-white to-cyan-300"></h3>
+      </div>
+
+      <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-500/20 to-indigo-500/20 border-2 border-amber-400/60 flex items-center justify-center animate-bounce shadow-2xl">
+        <span class="text-4xl">🎯</span>
+      </div>
+      <p class="text-xs text-slate-400 font-bold">20 Soru Başlıyor! İngilizce kelimenin fotoğrafını ilk tıklayan puanı kapar!</p>
+    </div>
+
+    <!-- 4. SORU VE YARIŞMA EKRANI (PLAYING) -->
+    <div id="screenPlaying" class="hidden flex-col h-full justify-between space-y-2">
+      
+      <!-- Soru Panosu & Zaman Sayacı -->
+      <div class="glass-panel rounded-2xl p-3 shadow-2xl border-t border-slate-600/50 space-y-2">
+        <div class="flex items-center justify-between text-xs font-black">
+          <span id="questionThemeBadge" class="text-indigo-400 tracking-wider">THEME</span>
+          <span id="questionCounter" class="font-mono-num text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/30">Soru 1/20</span>
+        </div>
+
+        <!-- İNGİLİZCE KELİME (DEV VE NEON IŞIKLI) -->
+        <div class="text-center py-1">
+          <h1 id="questionWord" class="text-3xl sm:text-4xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-amber-200 to-rose-300 glow-word">
+            WORD
+          </h1>
+          <p id="questionHint" class="text-[11px] text-slate-400 mt-0.5 font-bold">Doğru gerçek fotoğrafı ilk sen bul!</p>
+        </div>
+
+        <!-- YARIŞMA ZAMAN ÇUBUĞU (10 SANİYE) -->
+        <div class="space-y-1">
+          <div class="w-full bg-slate-950/80 h-3 rounded-full overflow-hidden p-0.5 border border-slate-700/60 shadow-inner">
+            <div id="timerBar" class="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 rounded-full transition-all duration-1000 ease-linear shadow" style="width: 100%;"></div>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-400 px-1 font-bold">
+            <span class="text-slate-500">Kalan Süre:</span>
+            <span id="timerText" class="font-mono-num text-amber-400 font-black text-sm">10s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CEVAP GERİ BİLDİRİM BANTI -->
+      <div id="feedbackBanner" class="hidden py-1.5 px-3 rounded-xl text-center text-xs font-black shadow-lg"></div>
+
+      <!-- 4 GERÇEK FOTOĞRAF KARTI (2x2 GRID - TV YARIŞMA FORMATINDA) -->
+      <div class="grid grid-cols-2 gap-2.5 flex-1 items-stretch">
+        <button onclick="handleOptionClick(0)" id="optionBtn-0" class="card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-2 border-slate-700/60 shadow-xl overflow-hidden active:border-indigo-400 relative">
+          <div class="w-full h-32 sm:h-36 rounded-xl overflow-hidden shadow-inner bg-slate-900 flex items-center justify-center">
+            <img id="imgOpt-0" class="w-full h-full object-cover transition transform hover:scale-105" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+        </button>
+
+        <button onclick="handleOptionClick(1)" id="optionBtn-1" class="card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-2 border-slate-700/60 shadow-xl overflow-hidden active:border-indigo-400 relative">
+          <div class="w-full h-32 sm:h-36 rounded-xl overflow-hidden shadow-inner bg-slate-900 flex items-center justify-center">
+            <img id="imgOpt-1" class="w-full h-full object-cover transition transform hover:scale-105" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+        </button>
+
+        <button onclick="handleOptionClick(2)" id="optionBtn-2" class="card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-2 border-slate-700/60 shadow-xl overflow-hidden active:border-indigo-400 relative">
+          <div class="w-full h-32 sm:h-36 rounded-xl overflow-hidden shadow-inner bg-slate-900 flex items-center justify-center">
+            <img id="imgOpt-2" class="w-full h-full object-cover transition transform hover:scale-105" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+        </button>
+
+        <button onclick="handleOptionClick(3)" id="optionBtn-3" class="card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-2 border-slate-700/60 shadow-xl overflow-hidden active:border-indigo-400 relative">
+          <div class="w-full h-32 sm:h-36 rounded-xl overflow-hidden shadow-inner bg-slate-900 flex items-center justify-center">
+            <img id="imgOpt-3" class="w-full h-full object-cover transition transform hover:scale-105" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 5. OYUN SONU EKRANI (PODYUM & SKOR TABLOSU) -->
+    <div id="screenGameOver" class="hidden flex-col items-center text-center space-y-4 py-4">
+      <div class="w-24 h-24 rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-5xl shadow-2xl neon-gold animate-bounce">
+        🏆
+      </div>
+
+      <div class="space-y-1">
+        <h2 id="winnerTitle" class="text-3xl font-black text-amber-300">20 SORULUK DÜELLO TAMAMLANDI!</h2>
+        <p id="winnerSubtitle" class="text-xs text-slate-300 font-bold">Nefes kesen bir refleks & kelime yarışıydı!</p>
+      </div>
+
+      <!-- Skor Kartı -->
+      <div class="w-full max-w-xs glass-panel rounded-2xl p-4 space-y-3 border border-slate-700">
+        <div class="flex justify-between items-center text-sm font-black border-b border-slate-800 pb-2.5">
+          <span class="text-rose-400 flex items-center gap-1.5"><span>🔴</span> 1. Oyuncu</span>
+          <span id="finalScoreP1" class="font-mono-num text-2xl font-black text-white">0</span>
+        </div>
+        <div class="flex justify-between items-center text-sm font-black">
+          <span class="text-cyan-400 flex items-center gap-1.5"><span>🔵</span> 2. Oyuncu</span>
+          <span id="finalScoreP2" class="font-mono-num text-2xl font-black text-white">0</span>
+        </div>
+      </div>
+
+      <div class="text-xs text-amber-300 font-bold bg-amber-500/10 border border-amber-500/30 py-2.5 px-4 rounded-xl shadow-lg">
+        ⏳ Birkaç saniye içinde standdaki yeni oyuncular için sıra devredilecek...
+      </div>
+    </div>
+
+    <!-- 6. KICKED TO QR EKRANI (STANDDA YENİDEN QR OKUTMA UYARISI) -->
+    <div id="screenKicked" class="hidden flex-col items-center text-center space-y-5 py-8 px-4">
+      <div class="w-24 h-24 rounded-3xl bg-gradient-to-tr from-indigo-500/30 to-purple-500/30 border-2 border-indigo-400 flex items-center justify-center text-5xl shadow-2xl">
+        📲
+      </div>
+
+      <div class="space-y-2">
+        <h2 class="text-3xl font-black text-white">OYUN TAMAMLANDI!</h2>
+        <p class="text-slate-300 text-sm max-w-xs mx-auto leading-relaxed font-medium">
+          Tebrikler! Standda sıra bekleyen diğer arkadaşlar için sıranız devredildi.
+        </p>
+        <p class="text-amber-400 text-xs font-black max-w-xs mx-auto bg-amber-500/10 py-2 px-3 rounded-xl border border-amber-500/20">
+          Tekrar yarışmak isterseniz lütfen standın önündeki QR kodu yeniden okutun!
+        </p>
+      </div>
+
+      <div class="p-4 glass-panel rounded-2xl text-xs text-slate-400 max-w-xs">
+        Stand görevlisi yeni düello için hazır.
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ALT BİLGİ -->
+  <footer class="text-center text-[10px] text-slate-500 py-1 font-bold">
+    TÜBİTAK 4006 Bilim Fuarı • 20 Soruluk İngilizce Kelime Düellosu
+  </footer>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    let mySlot = parseInt(urlParams.get('slot')) || 1;
+    let socket = io();
+    let audioCtx = null;
+    let hasAnsweredCurrentQuestion = false;
+
+    function playTone(freq, type, duration) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type || 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function soundCorrect() {
+      playTone(587.33, 'triangle', 0.15);
+      setTimeout(() => playTone(880, 'triangle', 0.3), 120);
+    }
+
+    function soundWrong() {
+      playTone(160, 'sawtooth', 0.35);
+    }
+
+    function triggerConfetti() {
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.7 }
+        });
+      }
+    }
+
+    const screens = {
+      waiting: document.getElementById('screenWaiting'),
+      voting: document.getElementById('screenVoting'),
+      intro: document.getElementById('screenIntro'),
+      playing: document.getElementById('screenPlaying'),
+      gameover: document.getElementById('screenGameOver'),
+      kicked: document.getElementById('screenKicked')
+    };
+
+    function showScreen(screenKey) {
+      Object.keys(screens).forEach(k => {
+        if (screens[k]) screens[k].classList.add('hidden');
+      });
+      if (screens[screenKey]) {
+        screens[screenKey].classList.remove('hidden');
+        screens[screenKey].classList.add('flex');
+      }
+    }
+
+    socket.emit('join_slot', mySlot);
+
+    socket.on('slot_assigned', (data) => {
+      mySlot = data.slot;
+      const titleEl = document.getElementById('playerTitle');
+      const badge = document.getElementById('playerBadge');
+      if (mySlot === 1) {
+        titleEl.textContent = '1. Oyuncu (Kırmızı)';
+        titleEl.className = 'font-black text-xs tracking-wider text-rose-400 uppercase';
+        badge.classList.add('neon-red');
+      } else {
+        titleEl.textContent = '2. Oyuncu (Mavi)';
+        titleEl.className = 'font-black text-xs tracking-wider text-cyan-400 uppercase';
+        badge.classList.add('neon-blue');
+      }
+    });
+
+    function voteDifficulty(level) {
+      socket.emit('submit_vote', level);
+      document.querySelectorAll('.vote-btn').forEach(b => {
+        b.classList.remove('ring-4', 'ring-white', 'opacity-50');
+      });
+      const selectedBtn = document.getElementById('vote-' + level);
+      if (selectedBtn) {
+        selectedBtn.classList.add('ring-4', 'ring-white');
+      }
+      document.getElementById('voteStatusText').textContent = 'Oyunuz gönderildi! Rakip oyu bekleniyor...';
+    }
+
+    function handleOptionClick(index) {
+      if (hasAnsweredCurrentQuestion) return;
+      hasAnsweredCurrentQuestion = true;
+
+      const clickedBtn = document.getElementById('optionBtn-' + index);
+      if (clickedBtn) {
+        clickedBtn.classList.add('ring-4', 'ring-indigo-400');
+      }
+
+      socket.emit('submit_answer', index);
+    }
+
+    socket.on('answer_feedback', (data) => {
+      const banner = document.getElementById('feedbackBanner');
+      banner.classList.remove('hidden');
+
+      if (data.correct) {
+        soundCorrect();
+        triggerConfetti();
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        banner.className = 'py-2 px-3 rounded-xl text-center text-xs font-black bg-gradient-to-r from-emerald-500/30 to-teal-500/30 text-emerald-300 border border-emerald-400/50 shadow-lg';
+        banner.textContent = '⚡ HARİKA! İlk sen bildin ve +1 puan kazandın!';
+      } else if (data.opponentWon) {
+        soundWrong();
+        banner.className = 'py-2 px-3 rounded-xl text-center text-xs font-black bg-gradient-to-r from-amber-500/30 to-orange-500/30 text-amber-300 border border-amber-400/50 shadow-lg';
+        banner.textContent = '⚡ Rakip daha hızlı davrandı ve puanı kaptı!';
+      } else if (data.locked) {
+        soundWrong();
+        document.getElementById('screenPlaying').classList.add('shake-anim');
+        setTimeout(() => document.getElementById('screenPlaying').classList.remove('shake-anim'), 400);
+        if (navigator.vibrate) navigator.vibrate(250);
+        banner.className = 'py-2 px-3 rounded-xl text-center text-xs font-black bg-gradient-to-r from-rose-500/30 to-red-500/30 text-rose-300 border border-rose-400/50 shadow-lg';
+        banner.textContent = '❌ Yanlış! Bu soruluk kilitlendiniz.';
+      }
+    });
+
+    socket.on('timer_tick', (data) => {
+      const bar = document.getElementById('timerBar');
+      const text = document.getElementById('timerText');
+      if (bar && text) {
+        bar.style.width = ((data.timer / 10) * 100) + '%';
+        text.textContent = data.timer + 's';
+      }
+    });
+
+    socket.on('kicked_to_qr', (data) => {
+      showScreen('kicked');
+      socket.disconnect();
+    });
+
+    socket.on('state_update', (state) => {
+      document.getElementById('scoreP1').textContent = state.players[1].score;
+      document.getElementById('scoreP2').textContent = state.players[2].score;
+
+      if (state.status === 'waiting') {
+        showScreen('waiting');
+      } else if (state.status === 'voting') {
+        showScreen('voting');
+      } else if (state.status === 'intro') {
+        showScreen('intro');
+        if (state.difficulty) {
+          const badge = document.getElementById('chosenDifficultyBadge');
+          badge.textContent = state.difficulty.badge;
+          badge.style.backgroundColor = state.difficulty.color + '25';
+          badge.style.color = state.difficulty.color;
+          badge.style.borderColor = state.difficulty.color;
+        }
+        if (state.question) {
+          document.getElementById('chosenThemeName').textContent = state.question.theme;
+        }
+      } else if (state.status === 'playing') {
+        showScreen('playing');
+        hasAnsweredCurrentQuestion = false;
+        document.getElementById('feedbackBanner').classList.add('hidden');
+
+        if (state.question) {
+          document.getElementById('questionWord').textContent = state.question.word;
+          document.getElementById('questionThemeBadge').textContent = 'THEME: ' + state.question.theme + ' (' + state.question.grade + ')';
+          document.getElementById('questionCounter').textContent = 'Soru ' + (state.currentQuestionIndex + 1) + '/' + state.totalQuestions;
+
+          state.question.options.forEach((opt, idx) => {
+            const imgEl = document.getElementById('imgOpt-' + idx);
+            const btn = document.getElementById('optionBtn-' + idx);
+            if (imgEl) imgEl.src = opt.img;
+            if (btn) {
+              btn.className = 'card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-2 border-slate-700/60 shadow-xl overflow-hidden active:border-indigo-400 relative';
+              btn.disabled = false;
+            }
+          });
+        }
+      } else if (state.status === 'result') {
+        if (state.correctOptionIndex !== null) {
+          const correctBtn = document.getElementById('optionBtn-' + state.correctOptionIndex);
+          if (correctBtn) {
+            correctBtn.className = 'card-photo-box glass-panel rounded-2xl p-2 flex flex-col items-center justify-center border-4 border-emerald-400 bg-emerald-950/40 shadow-2xl scale-105 relative';
+          }
+        }
+      } else if (state.status === 'gameover') {
+        showScreen('gameover');
+        if (typeof confetti === 'function') confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
+        document.getElementById('finalScoreP1').textContent = state.players[1].score;
+        document.getElementById('finalScoreP2').textContent = state.players[2].score;
+
+        const wTitle = document.getElementById('winnerTitle');
+        if (state.players[1].score > state.players[2].score) {
+          wTitle.textContent = '🎉 1. OYUNCU (KIRMIZI) KAZANDI!';
+          wTitle.className = 'text-3xl font-black text-rose-400';
+        } else if (state.players[2].score > state.players[1].score) {
+          wTitle.textContent = '🎉 2. OYUNCU (MAVİ) KAZANDI!';
+          wTitle.className = 'text-3xl font-black text-cyan-400';
+        } else {
+          wTitle.textContent = '🤝 DOSTLUK KAZANDI! (BERABERE)';
+          wTitle.className = 'text-3xl font-black text-amber-300';
+        }
+      }
+    });
+  </script>
+</body>
+</html>

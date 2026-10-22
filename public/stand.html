@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TÜBİTAK Standı - Canlı Arena Ekranı</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Poppins', sans-serif; }
+    .neon-border-red { box-shadow: 0 0 25px rgba(239, 68, 68, 0.35); }
+    .neon-border-blue { box-shadow: 0 0 25px rgba(59, 130, 246, 0.35); }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pulse-ring { animation: pulse-ring 2s infinite ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between p-5 select-none overflow-hidden">
+
+  <!-- ÜST HEADER: TÜBİTAK BİLGİSİ & MAÇ BİLGİSİ -->
+  <header class="flex items-center justify-between bg-slate-900/80 backdrop-blur border border-slate-800 rounded-3xl p-4 shadow-2xl">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-red-600 to-indigo-600 flex items-center justify-center font-black text-lg shadow-lg">
+        TÜ
+      </div>
+      <div>
+        <h1 class="text-lg font-black tracking-wider text-slate-100 uppercase">TÜBİTAK 4006 İngilizce Projesi</h1>
+        <p class="text-xs text-slate-400 font-medium">20 Soruluk Gerçek Zamanlı Kelime & Refleks Düellosu</p>
+      </div>
+    </div>
+
+    <!-- MAÇ DURUMU ROZETİ -->
+    <div class="flex items-center gap-3">
+      <div id="standDifficultyBadge" class="hidden px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider border"></div>
+      <div id="standQuestionCount" class="hidden px-3.5 py-1.5 rounded-xl text-xs font-black bg-slate-800 text-amber-400 border border-slate-700">Soru 1/20</div>
+      <button onclick="toggleFullScreen()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1.5">
+        <span>⛶</span> <span>Tam Ekran</span>
+      </button>
+      <button onclick="resetGame()" class="px-3 py-1.5 rounded-xl bg-rose-900/40 hover:bg-rose-800/60 border border-rose-500/30 text-rose-300 text-xs font-bold transition">
+        🔄 Sıfırla
+      </button>
+    </div>
+  </header>
+
+  <!-- ORTA ARENA: OYUNCU 1 - CANLI OYUN ALANI - OYUNCU 2 -->
+  <main class="grid grid-cols-12 gap-5 my-3 flex-1 items-stretch">
+
+    <!-- SOL: 1. OYUNCU KARTI (KIRMIZI KÖŞE) -->
+    <div id="cardP1" class="col-span-3 bg-slate-900/60 border-2 border-red-500/40 rounded-3xl p-5 flex flex-col justify-between transition-all duration-300 neon-border-red">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-black rounded-full uppercase tracking-wider">
+            1. Oyuncu
+          </span>
+          <span id="statusDotP1" class="w-3 h-3 rounded-full bg-slate-600"></span>
+        </div>
+
+        <div class="text-center py-2">
+          <div class="w-20 h-20 mx-auto rounded-3xl bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center text-3xl mb-2 shadow-inner">
+            🔴
+          </div>
+          <h2 class="text-xl font-black text-red-400">Kırmızı Köşe</h2>
+          <p id="connTextP1" class="text-xs text-slate-400 mt-0.5">Bağlantı Bekleniyor...</p>
+        </div>
+
+        <!-- Oy Durumu -->
+        <div id="voteBoxP1" class="hidden bg-slate-950/60 border border-slate-800 rounded-2xl p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">Zorluk Tercihi</div>
+          <div id="voteTextP1" class="font-bold text-xs text-amber-400 mt-0.5">Seçiyor...</div>
+        </div>
+      </div>
+
+      <!-- DEV SKOR -->
+      <div class="text-center pt-4 border-t border-slate-800">
+        <div class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-0.5">Puan</div>
+        <div id="bigScoreP1" class="text-6xl font-black text-red-400">0</div>
+      </div>
+    </div>
+
+    <!-- ORTA: CANLI MERKEZ EKRANI -->
+    <div id="arenaCenter" class="col-span-6 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 flex flex-col justify-between shadow-2xl relative">
+
+      <!-- 1. MERKEZ BEKLEME EKRANI (QR KODLAR & KATILIM) -->
+      <div id="centerWaiting" class="h-full flex flex-col items-center justify-center text-center space-y-4">
+        <div class="space-y-1">
+          <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-black uppercase px-3.5 py-1 rounded-full">
+            TÜBİTAK Standı Katılım Alanı
+          </span>
+          <h2 class="text-2xl font-black text-white">Oyuncuların Katılımı Bekleniyor</h2>
+          <p class="text-slate-400 text-xs max-w-sm mx-auto">
+            Standın önündeki QR kodları telefonunuzun kamerasıyla okutarak 20 soruluk düelloya katılın!
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-5 w-full max-w-sm">
+          <div class="bg-slate-950 p-3.5 rounded-2xl border-2 border-red-500/40 text-center space-y-1.5">
+            <span class="text-xs font-black text-red-400">1. OYUNCU (KIRMIZI)</span>
+            <img id="qrImgP1" class="w-32 h-32 mx-auto bg-white p-2 rounded-xl" alt="QR 1" />
+            <p class="text-[10px] text-slate-400">1. Oyuncu Okutsun</p>
+          </div>
+          <div class="bg-slate-950 p-3.5 rounded-2xl border-2 border-blue-500/40 text-center space-y-1.5">
+            <span class="text-xs font-black text-blue-400">2. OYUNCU (MAVİ)</span>
+            <img id="qrImgP2" class="w-32 h-32 mx-auto bg-white p-2 rounded-xl" alt="QR 2" />
+            <p class="text-[10px] text-slate-400">2. Oyuncu Okutsun</p>
+          </div>
+        </div>
+
+        <div class="text-[11px] text-slate-500">
+          Genel İnternet Bağlantısı Aktif • A4 Çıktı: <a href="/print" target="_blank" class="text-indigo-400 underline font-bold">/print</a>
+        </div>
+      </div>
+
+      <!-- 2. MERKEZ OYLAMA EKRANI -->
+      <div id="centerVoting" class="hidden h-full flex-col items-center justify-center text-center space-y-5">
+        <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black uppercase px-3.5 py-1 rounded-full">
+          2/2 Oyuncu Bağlandı!
+        </span>
+        <h2 class="text-3xl font-black text-white">Zorluk Seviyesi Belirleniyor</h2>
+        <p class="text-slate-400 text-xs max-w-sm mx-auto">
+          Oyuncular telefonlarından zorluk seçiyor. Eşitlikte %50 kura çekilecektir (Toplam 20 Soru).
+        </p>
+
+        <div class="grid grid-cols-4 gap-2.5 w-full max-w-md">
+          <div class="p-2.5 rounded-2xl bg-slate-950 border border-emerald-500/30 text-center">
+            <div class="text-xs font-black text-emerald-400">🟢 Easy</div>
+            <div class="text-[10px] text-slate-400">9. Sınıf</div>
+          </div>
+          <div class="p-2.5 rounded-2xl bg-slate-950 border border-amber-500/30 text-center">
+            <div class="text-xs font-black text-amber-400">🟡 Medium</div>
+            <div class="text-[10px] text-slate-400">10. Sınıf</div>
+          </div>
+          <div class="p-2.5 rounded-2xl bg-slate-950 border border-rose-500/30 text-center">
+            <div class="text-xs font-black text-rose-400">🔴 Hard</div>
+            <div class="text-[10px] text-slate-400">11. Sınıf</div>
+          </div>
+          <div class="p-2.5 rounded-2xl bg-slate-950 border border-purple-500/30 text-center">
+            <div class="text-xs font-black text-purple-400">🟣 Impossible</div>
+            <div class="text-[10px] text-slate-400">12. Sınıf</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. MERKEZ OYUN EKRANI (PLAYING & RESULT) -->
+      <div id="centerPlaying" class="hidden h-full flex-col justify-between space-y-3">
+        
+        <!-- ÜST KELİME & BİLGİ -->
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center shadow-lg relative">
+          <div id="centerThemeText" class="text-[11px] uppercase tracking-widest text-indigo-400 font-bold mb-0.5">THEME</div>
+          <h1 id="centerWord" class="text-4xl sm:text-5xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-200 to-amber-300">
+            WORD
+          </h1>
+          <div id="centerTranslation" class="text-xs font-bold text-slate-400 mt-1 min-h-[18px]">
+            Doğru gerçek fotoğrafı ilk tıklayan puanı alır!
+          </div>
+
+          <!-- CANLI ZAMAN ÇUBUĞU -->
+          <div class="w-full bg-slate-900 h-3 rounded-full overflow-hidden p-0.5 border border-slate-800 mt-3">
+            <div id="centerTimerBar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 rounded-full transition-all duration-1000 ease-linear" style="width: 100%;"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-400 px-1 mt-0.5 font-bold">
+            <span>Kalan Süre</span>
+            <span id="centerTimerText" class="text-amber-400 font-black text-xs">10s</span>
+          </div>
+        </div>
+
+        <!-- 4 GERÇEK FOTOĞRAF ARENASI (EMOJİ YOK!) -->
+        <div class="grid grid-cols-2 gap-3 flex-1 items-stretch">
+          <div id="standOpt-0" class="bg-slate-950 border-2 border-slate-800 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-lg overflow-hidden">
+            <img id="standImg-0" class="w-full h-36 object-cover rounded-xl" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+          <div id="standOpt-1" class="bg-slate-950 border-2 border-slate-800 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-lg overflow-hidden">
+            <img id="standImg-1" class="w-full h-36 object-cover rounded-xl" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+          <div id="standOpt-2" class="bg-slate-950 border-2 border-slate-800 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-lg overflow-hidden">
+            <img id="standImg-2" class="w-full h-36 object-cover rounded-xl" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+          <div id="standOpt-3" class="bg-slate-950 border-2 border-slate-800 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-lg overflow-hidden">
+            <img id="standImg-3" class="w-full h-36 object-cover rounded-xl" src="" alt="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=400';" />
+          </div>
+        </div>
+
+        <!-- ANLIK KİM KAZANDI BİLDİRİMİ -->
+        <div id="winnerBanner" class="hidden py-2 px-4 rounded-xl text-center font-black text-xs shadow-xl"></div>
+      </div>
+
+      <!-- 4. MERKEZ OYUN SONU EKRANI -->
+      <div id="centerGameOver" class="hidden h-full flex-col items-center justify-center text-center space-y-4">
+        <div class="w-24 h-24 rounded-3xl bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-5xl shadow-2xl pulse-ring">
+          🏆
+        </div>
+        <div class="space-y-1">
+          <h2 id="centerWinnerHeading" class="text-3xl font-black text-amber-300">20 SORULUK DÜELLO TAMAMLANDI!</h2>
+          <p class="text-slate-400 text-xs">Birkaç saniye içinde yeni oyuncular için QR kodlar açılacak...</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SAĞ: 2. OYUNCU KARTI (MAVİ KÖŞE) -->
+    <div id="cardP2" class="col-span-3 bg-slate-900/60 border-2 border-blue-500/40 rounded-3xl p-5 flex flex-col justify-between transition-all duration-300 neon-border-blue">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-black rounded-full uppercase tracking-wider">
+            2. Oyuncu
+          </span>
+          <span id="statusDotP2" class="w-3 h-3 rounded-full bg-slate-600"></span>
+        </div>
+
+        <div class="text-center py-2">
+          <div class="w-20 h-20 mx-auto rounded-3xl bg-blue-500/10 border-2 border-blue-500/30 flex items-center justify-center text-3xl mb-2 shadow-inner">
+            🔵
+          </div>
+          <h2 class="text-xl font-black text-blue-400">Mavi Köşe</h2>
+          <p id="connTextP2" class="text-xs text-slate-400 mt-0.5">Bağlantı Bekleniyor...</p>
+        </div>
+
+        <!-- Oy Durumu -->
+        <div id="voteBoxP2" class="hidden bg-slate-950/60 border border-slate-800 rounded-2xl p-2.5 text-center">
+          <div class="text-[10px] text-slate-400">Zorluk Tercihi</div>
+          <div id="voteTextP2" class="font-bold text-xs text-amber-400 mt-0.5">Seçiyor...</div>
+        </div>
+      </div>
+
+      <!-- DEV SKOR -->
+      <div class="text-center pt-4 border-t border-slate-800">
+        <div class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-0.5">Puan</div>
+        <div id="bigScoreP2" class="text-6xl font-black text-blue-400">0</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ALT BİLGİ -->
+  <footer class="flex items-center justify-between text-xs text-slate-500 border-t border-slate-800 pt-2">
+    <span>TÜBİTAK 4006 Bilim Fuarı • 20 Soruluk İngilizce Kelime Düellosu</span>
+    <span id="serverIpBadge" class="font-mono bg-slate-900 px-3 py-1 rounded-lg border border-slate-800">Sunucu: Aktif</span>
+  </footer>
+
+  <script>
+    const socket = io();
+
+    function fetchInfo() {
+      fetch('/api/info')
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('serverIpBadge').textContent = data.publicUrl ? 'İnternet Tüneli: Aktif ✅' : 'Yerel Ağ';
+          fetch('/api/qr?text=' + encodeURIComponent(data.player1Url))
+            .then(r => r.json())
+            .then(q => document.getElementById('qrImgP1').src = q.url);
+          fetch('/api/qr?text=' + encodeURIComponent(data.player2Url))
+            .then(r => r.json())
+            .then(q => document.getElementById('qrImgP2').src = q.url);
+        });
+    }
+
+    fetchInfo();
+
+    const centers = {
+      waiting: document.getElementById('centerWaiting'),
+      voting: document.getElementById('centerVoting'),
+      playing: document.getElementById('centerPlaying'),
+      gameover: document.getElementById('centerGameOver')
+    };
+
+    function showCenter(key) {
+      Object.keys(centers).forEach(k => {
+        if (centers[k]) centers[k].classList.add('hidden');
+      });
+      if (centers[key]) {
+        centers[key].classList.remove('hidden');
+        centers[key].classList.add('flex');
+      }
+    }
+
+    socket.on('timer_tick', (data) => {
+      const bar = document.getElementById('centerTimerBar');
+      const text = document.getElementById('centerTimerText');
+      if (bar && text) {
+        bar.style.width = ((data.timer / 10) * 100) + '%';
+        text.textContent = data.timer + 's';
+      }
+    });
+
+    socket.on('state_update', (state) => {
+      const p1 = state.players[1];
+      document.getElementById('bigScoreP1').textContent = p1.score;
+      const dotP1 = document.getElementById('statusDotP1');
+      const connP1 = document.getElementById('connTextP1');
+      if (p1.connected) {
+        dotP1.className = 'w-3 h-3 rounded-full bg-emerald-400 animate-ping';
+        connP1.textContent = 'Bağlandı - Hazır ✅';
+        connP1.className = 'text-xs text-emerald-400 mt-0.5 font-bold';
+      } else {
+        dotP1.className = 'w-3 h-3 rounded-full bg-slate-600';
+        connP1.textContent = 'Bağlantı Bekleniyor...';
+        connP1.className = 'text-xs text-slate-400 mt-0.5';
+      }
+
+      const p2 = state.players[2];
+      document.getElementById('bigScoreP2').textContent = p2.score;
+      const dotP2 = document.getElementById('statusDotP2');
+      const connP2 = document.getElementById('connTextP2');
+      if (p2.connected) {
+        dotP2.className = 'w-3 h-3 rounded-full bg-emerald-400 animate-ping';
+        connP2.textContent = 'Bağlandı - Hazır ✅';
+        connP2.className = 'text-xs text-emerald-400 mt-0.5 font-bold';
+      } else {
+        dotP2.className = 'w-3 h-3 rounded-full bg-slate-600';
+        connP2.textContent = 'Bağlantı Bekleniyor...';
+        connP2.className = 'text-xs text-slate-400 mt-0.5';
+      }
+
+      const voteBox1 = document.getElementById('voteBoxP1');
+      const voteBox2 = document.getElementById('voteBoxP2');
+      if (state.status === 'voting') {
+        voteBox1.classList.remove('hidden');
+        voteBox2.classList.remove('hidden');
+        document.getElementById('voteTextP1').textContent = p1.vote ? p1.vote.toUpperCase() : 'Seçiyor...';
+        document.getElementById('voteTextP2').textContent = p2.vote ? p2.vote.toUpperCase() : 'Seçiyor...';
+      } else {
+        voteBox1.classList.add('hidden');
+        voteBox2.classList.add('hidden');
+      }
+
+      const diffBadge = document.getElementById('standDifficultyBadge');
+      const qCountBadge = document.getElementById('standQuestionCount');
+      if (state.difficulty) {
+        diffBadge.classList.remove('hidden');
+        diffBadge.textContent = state.difficulty.badge;
+        diffBadge.style.color = state.difficulty.color;
+        diffBadge.style.borderColor = state.difficulty.color;
+        diffBadge.style.backgroundColor = state.difficulty.color + '18';
+      } else {
+        diffBadge.classList.add('hidden');
+      }
+
+      if (state.status === 'playing' || state.status === 'result') {
+        qCountBadge.classList.remove('hidden');
+        qCountBadge.textContent = 'Soru ' + (state.currentQuestionIndex + 1) + '/' + state.totalQuestions;
+      } else {
+        qCountBadge.classList.add('hidden');
+      }
+
+      if (state.status === 'waiting') {
+        showCenter('waiting');
+      } else if (state.status === 'voting') {
+        showCenter('voting');
+      } else if (state.status === 'intro' || state.status === 'playing') {
+        showCenter('playing');
+        document.getElementById('winnerBanner').classList.add('hidden');
+        document.getElementById('centerTranslation').textContent = 'Doğru gerçek fotoğrafı ilk tıklayan puanı alır!';
+
+        if (state.question) {
+          document.getElementById('centerWord').textContent = state.question.word;
+          document.getElementById('centerThemeText').textContent = 'THEME: ' + state.question.theme + ' (' + state.question.grade + ')';
+
+          // Gerçek Fotoğrafları Göster (Emoji Yok!)
+          state.question.options.forEach((opt, idx) => {
+            const imgEl = document.getElementById('standImg-' + idx);
+            const box = document.getElementById('standOpt-' + idx);
+            if (imgEl) imgEl.src = opt.img;
+            if (box) {
+              box.className = 'bg-slate-950 border-2 border-slate-800 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-lg overflow-hidden';
+            }
+          });
+        }
+      } else if (state.status === 'result') {
+        if (state.correctOptionIndex !== null) {
+          const correctBox = document.getElementById('standOpt-' + state.correctOptionIndex);
+          if (correctBox) {
+            correctBox.className = 'bg-emerald-950/60 border-4 border-emerald-400 rounded-2xl p-2 flex flex-col items-center justify-center transition shadow-2xl scale-105 overflow-hidden';
+          }
+        }
+
+        if (state.question && state.question.translation) {
+          document.getElementById('centerTranslation').textContent = 'Türkçesi: ' + state.question.translation;
+        }
+
+        const banner = document.getElementById('winnerBanner');
+        banner.classList.remove('hidden');
+        if (state.questionWinner === 1) {
+          banner.className = 'py-2 px-4 rounded-xl text-center font-black text-xs bg-red-500/20 text-red-400 border border-red-500/40 shadow-xl';
+          banner.textContent = '⚡ 1. OYUNCU (KIRMIZI) DAHA HIZLI DAVRANDI VE 1 PUAN KAZANDI!';
+        } else if (state.questionWinner === 2) {
+          banner.className = 'py-2 px-4 rounded-xl text-center font-black text-xs bg-blue-500/20 text-blue-400 border border-blue-500/40 shadow-xl';
+          banner.textContent = '⚡ 2. OYUNCU (MAVİ) DAHA HIZLI DAVRANDI VE 1 PUAN KAZANDI!';
+        } else {
+          banner.className = 'py-2 px-4 rounded-xl text-center font-black text-xs bg-slate-800 text-slate-300 border border-slate-700 shadow-xl';
+          banner.textContent = '⏳ SÜRE DOLDU! İKİ OYUNCU DA BİLEMEDİ.';
+        }
+      } else if (state.status === 'gameover') {
+        showCenter('gameover');
+        const heading = document.getElementById('centerWinnerHeading');
+        if (p1.score > p2.score) {
+          heading.textContent = '🎉 1. OYUNCU (KIRMIZI) KAZANDI!';
+          heading.className = 'text-3xl font-black text-red-400';
+        } else if (p2.score > p1.score) {
+          heading.textContent = '🎉 2. OYUNCU (MAVİ) KAZANDI!';
+          heading.className = 'text-3xl font-black text-blue-400';
+        } else {
+          heading.textContent = '🤝 BERABERE BİTTİ!';
+          heading.className = 'text-3xl font-black text-amber-300';
+        }
+      }
+    });
+
+    function resetGame() {
+      socket.emit('restart_game');
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+  </script>
+</body>
+</html>
